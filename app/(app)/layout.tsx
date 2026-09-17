@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LogOut, UserCircle, Zap } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, UserCircle, Zap, MapPin } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -31,13 +33,25 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { navSections } from "@/lib/nav";
+import { navSections, type NavItem } from "@/lib/nav";
+import { ElectricPatternBackground } from "@/components/electric-pattern-bg";
 
-function pageTitle(pathname: string): string {
+interface Site {
+  id_site: number;
+  libelle_site: string;
+}
+
+function trouverElementMenu(pathname: string): NavItem | undefined {
   for (const section of navSections) {
     const item = section.items.find((i) => pathname.startsWith(i.href));
-    if (item) return item.label;
+    if (item) return item;
   }
+  return undefined;
+}
+
+function pageTitle(pathname: string): string {
+  const item = trouverElementMenu(pathname);
+  if (item) return item.label;
   if (pathname.startsWith("/materiels/")) return "Fiche materiel";
   return "Parc informatique DME";
 }
@@ -46,9 +60,99 @@ function initials(identifiant: string): string {
   return identifiant.slice(0, 2).toUpperCase();
 }
 
+function SelecteurSite() {
+  const { user, siteActif, changerSiteActif } = useAuth();
+  const [sites, setSites] = useState<Site[]>([]);
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/sites")
+      .then((res) => res.json())
+      .then(setSites)
+      .catch(() => setSites([]));
+  }, []);
+
+  // Choisit automatiquement le premier site si l'administrateur n'en a
+  // encore choisi aucun. Le changement d'etat est repousse hors de
+  // l'execution synchrone de l'effect (queueMicrotask), ce qui evite
+  // l'avertissement/erreur "setState synchronously within an effect".
+  useEffect(() => {
+    if (user?.profil === "administrateur" && !siteActif && sites.length > 0) {
+      queueMicrotask(() => changerSiteActif(String(sites[0].id_site)));
+    }
+  }, [user, siteActif, sites, changerSiteActif]);
+
+  if (!user) return null;
+
+  const nomSiteActif = sites.find((s) => String(s.id_site) === siteActif)?.libelle_site;
+
+  if (user.profil !== "administrateur") {
+    return nomSiteActif ? (
+      <Badge variant="secondary" className="hidden items-center gap-1 sm:inline-flex">
+        <MapPin className="size-3" />
+        {nomSiteActif}
+      </Badge>
+    ) : null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button>
+            <Badge variant="secondary" className="hidden cursor-pointer items-center gap-1 sm:inline-flex">
+              <MapPin className="size-3" />
+              {nomSiteActif ?? "Choisir un site"}
+            </Badge>
+          </button>
+        }
+      />
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Site consulté</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {sites.map((s) => (
+            <DropdownMenuItem key={s.id_site} onClick={() => changerSiteActif(String(s.id_site))}>
+              <MapPin />
+              {s.libelle_site}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, logout, pret } = useAuth();
+
+  useEffect(() => {
+    if (!pret) return;
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const item = trouverElementMenu(pathname);
+    if (item && !item.profils.includes(user.profil)) {
+      router.push("/dashboard");
+    }
+  }, [pret, user, pathname, router]);
+
+  function handleDeconnexion() {
+    logout();
+    router.push("/login");
+  }
+
+  if (!pret || !user) {
+    return (
+      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
+        Chargement...
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider>
@@ -121,35 +225,34 @@ function AppShell({ children }: { children: React.ReactNode }) {
               }
             />
             <DropdownMenuContent align="end" side="top" className="w-56">
-              <DropdownMenuLabel>Mon compte</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <UserCircle />
-                Profil
-              </DropdownMenuItem>
-              <DropdownMenuItem variant="destructive">
-                <LogOut />
-                Se deconnecter
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Mon compte</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <UserCircle />
+                  Profil
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={handleDeconnexion}>
+                  <LogOut />
+                  Se deconnecter
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
-        <header className="flex h-14 items-center gap-3 border-b bg-background px-4">
+      <SidebarInset className="relative">
+        <ElectricPatternBackground />
+        <header className="relative z-10 flex h-14 items-center gap-3 border-b bg-background px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-5" />
           <h1 className="text-sm font-medium">{pageTitle(pathname)}</h1>
           <div className="ml-auto flex items-center gap-2">
-            {user?.id_site && (
-              <Badge variant="secondary" className="hidden sm:inline-flex">
-                {user.id_site}
-              </Badge>
-            )}
+            <SelecteurSite />
             <ThemeToggle />
           </div>
         </header>
-        <main className="flex-1 bg-muted/30 p-6">{children}</main>
+        <main className="relative z-10 flex-1 bg-muted/30 p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

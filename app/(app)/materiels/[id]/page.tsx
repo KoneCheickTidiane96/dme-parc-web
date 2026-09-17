@@ -1,63 +1,273 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+"use client";
 
-export default async function MaterielDetailPage(
-  props: PageProps<"/materiels/[id]">
-) {
-  const { id } = await props.params;
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { appelApi } from "@/lib/api";
+
+const materielSchema = z.object({
+  codePoste: z.string().min(1, "Code poste requis"),
+  ciEntite: z.string().optional(),
+  marque: z.string().min(1, "Marque requise"),
+  modele: z.string().min(1, "Modele requis"),
+  numeroSerie: z.string().min(1, "Numero de serie requis"),
+  dateAchat: z.string().min(1, "Date d'achat requise"),
+  idStatut: z.string().min(1, "Statut requis"),
+  idTypeMateriel: z.string().min(1, "Type requis"),
+  ramMo: z.string().optional(),
+  ddGo: z.string().optional(),
+  observation: z.string().optional(),
+});
+
+type MaterielFormInput = z.input<typeof materielSchema>;
+type MaterielFormOutput = z.output<typeof materielSchema>;
+
+interface Statut {
+  id_statut: number;
+  libelle_statut: string;
+}
+
+interface TypeMateriel {
+  id_type_materiel: number;
+  libelle_type_materiel: string;
+}
+
+interface MaterielDetail {
+  id_materiel: number;
+  code_poste: string;
+  ci_entite: string | null;
+  marque: string;
+  modele: string;
+  numero_serie: string;
+  date_achat: string;
+  observation: string | null;
+  ram_mo: number | null;
+  dd_go: number | null;
+  id_statut: number;
+  id_type_materiel: number;
+}
+
+function versDateInput(date: string): string {
+  return date ? date.slice(0, 10) : "";
+}
+
+export default function ModifierMaterielPage() {
+  const router = useRouter();
+  const params = useParams();
+  const id = params.id as string;
+
+  const [statuts, setStatuts] = useState<Statut[]>([]);
+  const [types, setTypes] = useState<TypeMateriel[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreurServeur, setErreurServeur] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<MaterielFormInput, unknown, MaterielFormOutput>({
+    resolver: zodResolver(materielSchema),
+  });
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/statuts")
+      .then((res) => res.json())
+      .then(setStatuts)
+      .catch(() => setErreurServeur("Impossible de charger les statuts"));
+
+    fetch("http://localhost:5000/api/types-materiel")
+      .then((res) => res.json())
+      .then(setTypes)
+      .catch(() => setErreurServeur("Impossible de charger les types"));
+
+    appelApi(`/api/materiels/${id}`)
+      .then((m: MaterielDetail) => {
+        reset({
+          codePoste: m.code_poste,
+          ciEntite: m.ci_entite ?? "",
+          marque: m.marque,
+          modele: m.modele,
+          numeroSerie: m.numero_serie,
+          dateAchat: versDateInput(m.date_achat),
+          idStatut: String(m.id_statut),
+          idTypeMateriel: String(m.id_type_materiel),
+          ramMo: m.ram_mo ? String(m.ram_mo) : "",
+          ddGo: m.dd_go ? String(m.dd_go) : "",
+          observation: m.observation ?? "",
+        });
+      })
+      .catch(() => setErreurServeur("Impossible de charger ce matériel"))
+      .finally(() => setChargement(false));
+  }, [id, reset]);
+
+  async function onSubmit(values: MaterielFormOutput) {
+    setErreurServeur(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`http://localhost:5000/api/materiels/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          code_poste: values.codePoste,
+          ci_entite: values.ciEntite || null,
+          marque: values.marque,
+          modele: values.modele,
+          numero_serie: values.numeroSerie,
+          date_achat: values.dateAchat,
+          id_statut: Number(values.idStatut),
+          id_type_materiel: Number(values.idTypeMateriel),
+          ram_mo: values.ramMo ? Number(values.ramMo) : null,
+          dd_go: values.ddGo ? Number(values.ddGo) : null,
+          observation: values.observation || null,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("La modification a échoué");
+      }
+
+      router.push("/materiels");
+    } catch {
+      setErreurServeur("Erreur lors de la modification. Vérifie que le serveur tourne bien.");
+    }
+  }
+
+  if (chargement) {
+    return <p className="text-sm text-muted-foreground">Chargement...</p>;
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Fiche materiel {id}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Modifier le matériel</h1>
         <p className="text-muted-foreground">
-          Caracteristiques, affectations et historique des modifications (sections 5.2 et 5.3).
+          Mets à jour les informations de cette fiche matériel.
         </p>
       </div>
 
-      <Tabs defaultValue="fiche">
-        <TabsList>
-          <TabsTrigger value="fiche">Fiche</TabsTrigger>
-          <TabsTrigger value="affectations">Affectations</TabsTrigger>
-          <TabsTrigger value="historique">Historique</TabsTrigger>
-        </TabsList>
-        <TabsContent value="fiche">
-          <Card>
-            <CardHeader>
-              <CardTitle>Caracteristiques</CardTitle>
-              <CardDescription>A charger depuis l&apos;API Laravel.</CardDescription>
-            </CardHeader>
-            <CardContent className="text-muted-foreground">
-              Type, marque/modele, numero de serie, RAM, DD, date d&apos;achat, age calcule,
-              date de renouvellement, statut, site/emplacement, observation.
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="affectations">
-          <Card>
-            <CardHeader>
-              <CardTitle>Affectations</CardTitle>
-              <CardDescription>
-                Utilisateur courant et historique des affectations (changement d&apos;agent, de site).
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </TabsContent>
-        <TabsContent value="historique">
-          <Card>
-            <CardHeader>
-              <CardTitle>Historique des modifications</CardTitle>
-              <CardDescription>Qui, quoi, quand — journal d&apos;audit de cette fiche.</CardDescription>
-            </CardHeader>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Informations principales</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)} noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="codePoste">Code poste</Label>
+              <Input id="codePoste" {...register("codePoste")} />
+              {errors.codePoste && (
+                <p className="text-sm text-destructive">{errors.codePoste.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ciEntite">Entite (CI)</Label>
+              <Input id="ciEntite" {...register("ciEntite")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="marque">Marque</Label>
+              <Input id="marque" {...register("marque")} />
+              {errors.marque && (
+                <p className="text-sm text-destructive">{errors.marque.message}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="modele">Modele</Label>
+              <Input id="modele" {...register("modele")} />
+              {errors.modele && (
+                <p className="text-sm text-destructive">{errors.modele.message}</p>
+              )}
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="numeroSerie">Numero de serie</Label>
+              <Input id="numeroSerie" {...register("numeroSerie")} />
+              {errors.numeroSerie && (
+                <p className="text-sm text-destructive">{errors.numeroSerie.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ramMo">RAM (Mo)</Label>
+              <Input id="ramMo" type="number" {...register("ramMo")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ddGo">Disque dur (Go)</Label>
+              <Input id="ddGo" type="number" {...register("ddGo")} />
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="dateAchat">Date d&apos;achat</Label>
+              <Input id="dateAchat" type="date" {...register("dateAchat")} />
+              {errors.dateAchat && (
+                <p className="text-sm text-destructive">{errors.dateAchat.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="idStatut">Statut</Label>
+              <select
+                id="idStatut"
+                className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                {...register("idStatut")}
+              >
+                {statuts.map((s) => (
+                  <option key={s.id_statut} value={s.id_statut}>
+                    {s.libelle_statut}
+                  </option>
+                ))}
+              </select>
+              {errors.idStatut && (
+                <p className="text-sm text-destructive">{errors.idStatut.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="idTypeMateriel">Type de materiel</Label>
+              <select
+                id="idTypeMateriel"
+                className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                {...register("idTypeMateriel")}
+              >
+                {types.map((t) => (
+                  <option key={t.id_type_materiel} value={t.id_type_materiel}>
+                    {t.libelle_type_materiel}
+                  </option>
+                ))}
+              </select>
+              {errors.idTypeMateriel && (
+                <p className="text-sm text-destructive">{errors.idTypeMateriel.message}</p>
+              )}
+            </div>
+
+            {/* Champ Observation : Input classique (le composant Textarea n'existe pas dans ce projet) */}
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="observation">Observation</Label>
+              <Input id="observation" {...register("observation")} />
+            </div>
+
+            {erreurServeur && (
+              <p className="text-sm text-destructive sm:col-span-2">{erreurServeur}</p>
+            )}
+
+            <div className="flex gap-2 sm:col-span-2">
+              <Button type="submit" disabled={isSubmitting}>
+                Enregistrer les modifications
+              </Button>
+              <Button type="button" variant="outline" onClick={() => router.push("/materiels")}>
+                Annuler
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
