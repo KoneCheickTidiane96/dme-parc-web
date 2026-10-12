@@ -5,12 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { appelApi, API_BASE_URL } from "@/lib/api";
 
+// Regles de validation du formulaire
 const materielSchema = z.object({
   codePoste: z.string().min(1, "Code poste requis"),
   ciEntite: z.string().optional(),
@@ -53,6 +55,7 @@ interface MaterielDetail {
   id_type_materiel: number;
 }
 
+// Convertit une date du serveur en format accepte par <input type="date">
 function versDateInput(date: string): string {
   return date ? date.slice(0, 10) : "";
 }
@@ -76,6 +79,7 @@ export default function ModifierMaterielPage() {
     resolver: zodResolver(materielSchema),
   });
 
+  // Chargement des listes et des informations actuelles du materiel
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/statuts`)
       .then((res) => res.json())
@@ -107,17 +111,18 @@ export default function ModifierMaterielPage() {
       .finally(() => setChargement(false));
   }, [id, reset]);
 
+  // Appele quand le formulaire est incomplet
+  function onInvalid() {
+    toast.error("Formulaire incomplet : verifie les champs en rouge.");
+  }
+
+  // Envoi du formulaire : modification du materiel
   async function onSubmit(values: MaterielFormOutput) {
     setErreurServeur(null);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${API_BASE_URL}/api/materiels/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      await appelApi(`/api/materiels/${id}`, {
+        methode: "PUT",
+        corps: {
           code_poste: values.codePoste,
           ci_entite: values.ciEntite || null,
           marque: values.marque,
@@ -129,16 +134,17 @@ export default function ModifierMaterielPage() {
           ram_mo: values.ramMo ? Number(values.ramMo) : null,
           dd_go: values.ddGo ? Number(values.ddGo) : null,
           observation: values.observation || null,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        throw new Error("La modification a échoué");
-      }
-
+      // Message de confirmation, visible aussi sur la liste
+      toast.success("Matériel modifié avec succès");
       router.push("/materiels");
-    } catch {
-      setErreurServeur("Erreur lors de la modification. Vérifie que le serveur tourne bien.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de la modification.";
+      setErreurServeur(message);
+      toast.error(message);
     }
   }
 
@@ -160,7 +166,11 @@ export default function ModifierMaterielPage() {
           <CardTitle>Informations principales</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <form
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            noValidate
+          >
             <div className="space-y-2">
               <Label htmlFor="codePoste">Code poste</Label>
               <Input id="codePoste" {...register("codePoste")} />

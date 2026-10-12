@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { API_BASE_URL } from "@/lib/api";
 import { navSections, type NavItem } from "@/lib/nav";
 import { ElectricPatternBackground } from "@/components/electric-pattern-bg";
 
@@ -41,6 +42,7 @@ interface Site {
   libelle_site: string;
 }
 
+// Retrouve l'element du menu correspondant a l'adresse de la page
 function trouverElementMenu(pathname: string): NavItem | undefined {
   for (const section of navSections) {
     const item = section.items.find((i) => pathname.startsWith(i.href));
@@ -60,12 +62,13 @@ function initials(identifiant: string): string {
   return identifiant.slice(0, 2).toUpperCase();
 }
 
+// Badge (ou menu pour l'administrateur) qui indique le site consulte
 function SelecteurSite() {
   const { user, siteActif, changerSiteActif } = useAuth();
   const [sites, setSites] = useState<Site[]>([]);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/sites")
+    fetch(`${API_BASE_URL}/api/sites`)
       .then((res) => res.json())
       .then(setSites)
       .catch(() => setSites([]));
@@ -127,6 +130,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, logout, pret } = useAuth();
 
+  // Redirige vers la connexion si personne n'est connecte, et vers le
+  // tableau de bord si le profil n'a pas le droit d'ouvrir cette page
   useEffect(() => {
     if (!pret) return;
 
@@ -166,7 +171,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-sm font-semibold text-sidebar-foreground">
                 Parc informatique
               </span>
-              <span className="text-xs text-sidebar-foreground/60">DME — CIE</span>
+              <span className="text-xs text-sidebar-foreground/60">DME - CIE</span>
             </div>
           </div>
         </SidebarHeader>

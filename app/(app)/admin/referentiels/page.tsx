@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ListTree, Plus, Pencil, Check, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { appelApi } from "@/lib/api";
 
 interface TypeMateriel {
   id_type_materiel: number;
@@ -24,15 +26,6 @@ interface TypeMateriel {
 interface Statut {
   id_statut: number;
   libelle_statut: string;
-}
-
-// En-tete d'autorisation reutilise pour chaque appel a l'API (POST/PUT)
-function enTeteAuth() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
 }
 
 export default function ReferentielsPage() {
@@ -55,12 +48,17 @@ export default function ReferentielsPage() {
   const [nouvelleDureeType, setNouvelleDureeType] = useState("");
   const [nouveauLibelleStatut, setNouveauLibelleStatut] = useState("");
 
+  // Affiche une erreur (texte rouge + message rouge)
+  function signalerErreur(err: unknown, parDefaut: string) {
+    const message = err instanceof Error && err.message ? err.message : parDefaut;
+    setErreur(message);
+    toast.error(message);
+  }
+
+  // Chargement des types et des statuts
   function chargerDonnees() {
     setChargement(true);
-    Promise.all([
-      fetch("http://localhost:5000/api/types-materiel").then((res) => res.json()),
-      fetch("http://localhost:5000/api/statuts").then((res) => res.json()),
-    ])
+    Promise.all([appelApi("/api/types-materiel"), appelApi("/api/statuts")])
       .then(([typesData, statutsData]) => {
         setTypes(Array.isArray(typesData) ? typesData : []);
         setStatuts(Array.isArray(statutsData) ? statutsData : []);
@@ -83,39 +81,39 @@ export default function ReferentielsPage() {
 
   async function enregistrerType(id: number) {
     try {
-      const res = await fetch(`http://localhost:5000/api/types-materiel/${id}`, {
-        method: "PUT",
-        headers: enTeteAuth(),
-        body: JSON.stringify({
+      await appelApi(`/api/types-materiel/${id}`, {
+        methode: "PUT",
+        corps: {
           libelle_type_materiel: libelleTypeTemp,
           duree_vie_standard_annees: dureeTypeTemp ? Number(dureeTypeTemp) : null,
-        }),
+        },
       });
-      if (!res.ok) throw new Error();
       setTypeEnEdition(null);
+      setErreur(null);
       chargerDonnees();
-    } catch {
-      setErreur("Erreur lors de la modification du type");
+      toast.success("Type de matériel modifié avec succès");
+    } catch (err) {
+      signalerErreur(err, "Erreur lors de la modification du type");
     }
   }
 
   async function ajouterType() {
     if (!nouveauLibelleType.trim()) return;
     try {
-      const res = await fetch("http://localhost:5000/api/types-materiel", {
-        method: "POST",
-        headers: enTeteAuth(),
-        body: JSON.stringify({
+      await appelApi("/api/types-materiel", {
+        methode: "POST",
+        corps: {
           libelle_type_materiel: nouveauLibelleType,
           duree_vie_standard_annees: nouvelleDureeType ? Number(nouvelleDureeType) : null,
-        }),
+        },
       });
-      if (!res.ok) throw new Error();
       setNouveauLibelleType("");
       setNouvelleDureeType("");
+      setErreur(null);
       chargerDonnees();
-    } catch {
-      setErreur("Erreur lors de la création du type");
+      toast.success("Type de matériel ajouté avec succès");
+    } catch (err) {
+      signalerErreur(err, "Erreur lors de la création du type");
     }
   }
 
@@ -128,32 +126,32 @@ export default function ReferentielsPage() {
 
   async function enregistrerStatut(id: number) {
     try {
-      const res = await fetch(`http://localhost:5000/api/statuts/${id}`, {
-        method: "PUT",
-        headers: enTeteAuth(),
-        body: JSON.stringify({ libelle_statut: libelleStatutTemp }),
+      await appelApi(`/api/statuts/${id}`, {
+        methode: "PUT",
+        corps: { libelle_statut: libelleStatutTemp },
       });
-      if (!res.ok) throw new Error();
       setStatutEnEdition(null);
+      setErreur(null);
       chargerDonnees();
-    } catch {
-      setErreur("Erreur lors de la modification du statut");
+      toast.success("Statut modifié avec succès");
+    } catch (err) {
+      signalerErreur(err, "Erreur lors de la modification du statut");
     }
   }
 
   async function ajouterStatut() {
     if (!nouveauLibelleStatut.trim()) return;
     try {
-      const res = await fetch("http://localhost:5000/api/statuts", {
-        method: "POST",
-        headers: enTeteAuth(),
-        body: JSON.stringify({ libelle_statut: nouveauLibelleStatut }),
+      await appelApi("/api/statuts", {
+        methode: "POST",
+        corps: { libelle_statut: nouveauLibelleStatut },
       });
-      if (!res.ok) throw new Error();
       setNouveauLibelleStatut("");
+      setErreur(null);
       chargerDonnees();
-    } catch {
-      setErreur("Erreur lors de la création du statut");
+      toast.success("Statut ajouté avec succès");
+    } catch (err) {
+      signalerErreur(err, "Erreur lors de la création du statut");
     }
   }
 
@@ -214,7 +212,7 @@ export default function ReferentielsPage() {
                     ) : (
                       <>
                         <TableCell>{t.libelle_type_materiel}</TableCell>
-                        <TableCell>{t.duree_vie_standard_annees ?? "—"}</TableCell>
+                        <TableCell>{t.duree_vie_standard_annees ?? "-"}</TableCell>
                         <TableCell>
                           <Button size="icon-sm" variant="ghost" onClick={() => commencerEditionType(t)}>
                             <Pencil className="size-4" />

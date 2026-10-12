@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
 import { useAuth } from "@/lib/auth";
-import { appelApi } from "@/lib/api";
+import { API_BASE_URL, appelApi } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
 interface Renouvellement {
@@ -41,6 +41,7 @@ interface Renouvellement {
 
 const colonnes = ["Code poste", "Type", "Marque / Modele", "Statut", "Date de renouvellement", "Urgence"];
 
+// Texte et couleur de l'urgence selon le nombre de jours restants
 function niveauUrgence(joursRestants: number) {
   if (joursRestants < 0) {
     return { texte: "Depasse", couleur: "text-destructive font-semibold" };
@@ -57,6 +58,7 @@ export default function RenouvellementsPage() {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // Chargement des alertes du site actif
   useEffect(() => {
     if (!siteActif) return;
 
@@ -69,7 +71,7 @@ export default function RenouvellementsPage() {
 
   // Declenche le telechargement dans le format choisi (pdf, word ou excel),
   // en creant un lien temporaire invisible plutot qu'un <a href> statique
-  // (puisque l'URL depend maintenant du format cliqué)
+  // (puisque l'URL depend maintenant du format clique)
   function exporter(format: "pdf" | "word" | "excel") {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const params = new URLSearchParams();
@@ -77,7 +79,7 @@ export default function RenouvellementsPage() {
     if (token) params.set("token", token);
     params.set("format", format);
 
-    const url = `http://localhost:5000/api/renouvellements/export?${params.toString()}`;
+    const url = `${API_BASE_URL}/api/renouvellements/export?${params.toString()}`;
     const lien = document.createElement("a");
     lien.href = url;
     lien.download = "";

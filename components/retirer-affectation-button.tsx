@@ -1,34 +1,33 @@
 "use client";
 
-// Composant client (interactif) séparé de la page liste (qui reste un composant serveur).
-// Nécessaire car cliquer sur un bouton et appeler l'API ne peut se faire que côté client.
+// Composant client (interactif) : bouton pour retirer une affectation.
+// Il utilise appelApi, qui s'occupe de l'adresse du serveur et du jeton de connexion.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { appelApi } from "@/lib/api";
 
 export function RetirerAffectationButton({ idAffecter }: { idAffecter: number }) {
   const router = useRouter();
   const [enCours, setEnCours] = useState(false);
 
+  // Termine l'affectation (le materiel redevient disponible)
   async function handleRetirer() {
     setEnCours(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:5000/api/affectations/${idAffecter}/retirer`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({}),
+      await appelApi(`/api/affectations/${idAffecter}/retirer`, {
+        methode: "PUT",
+        corps: {},
       });
-      if (!res.ok) {
-        throw new Error("Erreur lors du retrait");
-      }
       router.refresh();
-    } catch {
-      alert("Erreur lors du retrait du matériel. Vérifie que le serveur tourne bien.");
+      // Message de confirmation
+      toast.success("Matériel retiré avec succès");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors du retrait du matériel.";
+      toast.error(message);
     } finally {
       setEnCours(false);
     }

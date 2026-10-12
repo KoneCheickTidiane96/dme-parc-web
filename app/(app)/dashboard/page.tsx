@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
-import { appelApi } from "@/lib/api";
+import { API_BASE_URL, appelApi } from "@/lib/api";
 
 interface RepartitionItem {
   libelle_statut?: string;
@@ -30,6 +30,7 @@ interface DashboardData {
   materiel_a_renouveler: number;
 }
 
+// Barre de repartition avec pourcentage
 function BarreRepartition({ libelle, nombre, total }: { libelle: string; nombre: number; total: number }) {
   const pourcentage = total > 0 ? Math.round((nombre / total) * 100) : 0;
   return (
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // Chargement des indicateurs du site actif
   useEffect(() => {
     if (!siteActif) return;
 
@@ -63,6 +65,7 @@ export default function DashboardPage() {
       .finally(() => setChargement(false));
   }, [siteActif]);
 
+  // Telechargement de l'export (PDF, Word ou Excel)
   function exporter(format: "pdf" | "word" | "excel") {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const params = new URLSearchParams();
@@ -70,7 +73,7 @@ export default function DashboardPage() {
     if (token) params.set("token", token);
     params.set("format", format);
 
-    const url = `http://localhost:5000/api/dashboard/export?${params.toString()}`;
+    const url = `${API_BASE_URL}/api/dashboard/export?${params.toString()}`;
     const lien = document.createElement("a");
     lien.href = url;
     lien.download = "";

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Laptop, Plus, Search, Pencil, Upload, Archive } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -58,6 +59,7 @@ interface ResumeImport {
   feuille_utilisee?: string;
 }
 
+// Extrait le nombre a la fin du code poste (ex: "PC-DME 12" -> 12) pour trier 1, 2, 3...
 function numeroCodePoste(codePoste: string): number {
   const correspondance = codePoste?.match(/(\d+)\s*$/);
   return correspondance ? parseInt(correspondance[1], 10) : Number.MAX_SAFE_INTEGER;
@@ -81,6 +83,7 @@ export default function MaterielsPage() {
   const [resultatImport, setResultatImport] = useState<ResumeImport | null>(null);
   const [erreurImport, setErreurImport] = useState<string | null>(null);
 
+  // Chargement du materiel du site actif et de la liste des statuts
   function chargerMateriels() {
     if (!siteActif) return;
 
@@ -108,6 +111,7 @@ export default function MaterielsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteActif]);
 
+  // Filtrage (recherche + statut) puis tri par numero de code poste
   const materielsFiltres = useMemo(() => {
     return materiels
       .filter((m) => {
@@ -126,7 +130,8 @@ export default function MaterielsPage() {
       .sort((a, b) => numeroCodePoste(a.code_poste) - numeroCodePoste(b.code_poste));
   }, [materiels, recherche, statutChoisi]);
 
-  const touteLaSelection = materielsFiltres.length > 0 && materielsFiltres.every((m) => selection.has(m.id_materiel));
+  const touteLaSelection =
+    materielsFiltres.length > 0 && materielsFiltres.every((m) => selection.has(m.id_materiel));
 
   function basculerLigne(id: number) {
     setSelection((precedent) => {
@@ -138,32 +143,35 @@ export default function MaterielsPage() {
   }
 
   function basculerTout() {
-    setSelection((precedent) => {
+    setSelection(() => {
       if (touteLaSelection) return new Set();
       return new Set(materielsFiltres.map((m) => m.id_materiel));
     });
   }
 
+  // Archive (statut Reforme) tous les materiels coches
   async function archiverSelection() {
     if (selection.size === 0) return;
     if (!confirm(`Archiver ${selection.size} matériel(s) sélectionné(s) ?`)) return;
 
     setArchivageEnCours(true);
-    const token = localStorage.getItem("token");
+    const nombre = selection.size;
 
     try {
       await Promise.all(
         Array.from(selection).map((id) =>
-          fetch(`${API_BASE_URL}/api/materiels/${id}`, {
-            method: "DELETE",
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          })
+          appelApi(`/api/materiels/${id}`, { methode: "DELETE", idSite: siteActif })
         )
       );
       setSelection(new Set());
       chargerMateriels();
-    } catch {
-      setErreur("Erreur lors de l'archivage de la sélection");
+      // Message de confirmation
+      toast.success(`${nombre} matériel(s) archivé(s) avec succès`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'archivage de la sélection";
+      setErreur(message);
+      toast.error(message);
     } finally {
       setArchivageEnCours(false);
     }
@@ -175,6 +183,7 @@ export default function MaterielsPage() {
     inputFichierRef.current?.click();
   }
 
+  // Envoi du fichier Excel choisi au serveur
   async function gererFichierChoisi(e: React.ChangeEvent<HTMLInputElement>) {
     const fichier = e.target.files?.[0];
     if (!fichier || !siteActif) return;
@@ -205,8 +214,14 @@ export default function MaterielsPage() {
 
       setResultatImport(resultat);
       chargerMateriels();
+      // Message de confirmation
+      toast.success(
+        `Import terminé : ${resultat.materiels_crees} créé(s), ${resultat.materiels_mis_a_jour} mis à jour`
+      );
     } catch (err) {
-      setErreurImport(err instanceof Error ? err.message : "Erreur lors de l'import");
+      const message = err instanceof Error ? err.message : "Erreur lors de l'import";
+      setErreurImport(message);
+      toast.error(message);
     } finally {
       setImportEnCours(false);
       if (inputFichierRef.current) inputFichierRef.current.value = "";
@@ -234,7 +249,10 @@ export default function MaterielsPage() {
             <Upload />
             {importEnCours ? "Import en cours..." : "Importer Excel"}
           </Button>
-          <Button render={<Link href="/materiels/nouveau"><Plus />Nouvelle fiche</Link>} />
+          <Button
+            nativeButton={false}
+            render={<Link href="/materiels/nouveau"><Plus />Nouvelle fiche</Link>}
+          />
         </div>
       </div>
 
@@ -243,11 +261,11 @@ export default function MaterielsPage() {
           <CardHeader>
             <CardTitle className="text-base">Résultat de l&apos;import</CardTitle>
             <CardDescription>
-              {resultatImport.feuille_utilisee && `Feuille "${resultatImport.feuille_utilisee}" — `}
+              {resultatImport.feuille_utilisee && `Feuille "${resultatImport.feuille_utilisee}" - `}
               {resultatImport.materiels_crees} créé(s), {resultatImport.materiels_mis_a_jour} mis à jour
-              {resultatImport.types_crees > 0 && ` — ${resultatImport.types_crees} type(s) créé(s)`}
-              {resultatImport.statuts_crees > 0 && ` — ${resultatImport.statuts_crees} statut(s) créé(s)`}
-              {resultatImport.utilisateurs_crees > 0 && ` — ${resultatImport.utilisateurs_crees} utilisateur(s) créé(s)`}
+              {resultatImport.types_crees > 0 && ` - ${resultatImport.types_crees} type(s) créé(s)`}
+              {resultatImport.statuts_crees > 0 && ` - ${resultatImport.statuts_crees} statut(s) créé(s)`}
+              {resultatImport.utilisateurs_crees > 0 && ` - ${resultatImport.utilisateurs_crees} utilisateur(s) créé(s)`}
             </CardDescription>
           </CardHeader>
           {resultatImport.lignes_ignorees.length > 0 && (
@@ -377,17 +395,18 @@ export default function MaterielsPage() {
                       <TableCell className="truncate">{m.libelle_type_materiel}</TableCell>
                       <TableCell className="truncate">{m.marque} {m.modele}</TableCell>
                       <TableCell className="truncate text-xs">
-                        {m.ram_mo ? `${m.ram_mo}Mo` : "—"}/{m.dd_go ? `${m.dd_go}Go` : "—"}
+                        {m.ram_mo ? `${m.ram_mo}Mo` : "-"}/{m.dd_go ? `${m.dd_go}Go` : "-"}
                       </TableCell>
-                      <TableCell className="truncate">{m.nom_utilisateur ?? "—"}</TableCell>
-                      <TableCell className="truncate">{m.libelle_site ?? "—"}</TableCell>
+                      <TableCell className="truncate">{m.nom_utilisateur ?? "-"}</TableCell>
+                      <TableCell className="truncate">{m.libelle_site ?? "-"}</TableCell>
                       <TableCell className="text-xs break-words">{m.libelle_statut}</TableCell>
                       <TableCell className="truncate text-xs">{formatDate(m.date_achat)}</TableCell>
-                      <TableCell>{m.age_calcule ?? "—"}</TableCell>
+                      <TableCell>{m.age_calcule ?? "-"}</TableCell>
                       <TableCell>
                         <Button
                           size="icon-sm"
                           variant="ghost"
+                          nativeButton={false}
                           render={<Link href={`/materiels/${m.id_materiel}`} />}
                         >
                           <Pencil className="size-4" />

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
 import { formatDate } from "@/lib/format";
+import { appelApi } from "@/lib/api";
 
 interface LigneAudit {
   id_audit: number;
@@ -41,13 +42,9 @@ export default function JournalAuditPage() {
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // Chargement des dernieres actions enregistrees
   useEffect(() => {
-    const token = localStorage.getItem("token");
-
-    fetch("http://localhost:5000/api/journal-audit", {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((res) => res.json())
+    appelApi("/api/journal-audit")
       .then((resultat) => setLignes(Array.isArray(resultat) ? resultat : []))
       .catch(() => setErreur("Erreur lors du chargement du journal d'audit"))
       .finally(() => setChargement(false));
@@ -114,7 +111,7 @@ export default function JournalAuditPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>{ligne.entite}</TableCell>
-                      <TableCell className="text-muted-foreground">{ligne.details ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{ligne.details ?? "-"}</TableCell>
                     </TableRow>
                   ))
                 )}
