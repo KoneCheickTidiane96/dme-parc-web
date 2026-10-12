@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
 import { appelApi } from "@/lib/api";
 
+// Regles de validation du formulaire
 const affectationSchema = z.object({
   idMateriel: z.string().min(1, "Materiel requis"),
   idUtilisateur: z.string().min(1, "Utilisateur requis"),
@@ -50,12 +52,10 @@ export default function NouvelleAffectationPage() {
     resolver: zodResolver(affectationSchema),
   });
 
+  // Chargement des listes (materiels et utilisateurs du site actif)
   useEffect(() => {
     if (!siteActif) return;
 
-    // Les deux listes sont desormais protegees par connexion : on utilise
-    // appelApi (qui joint automatiquement le jeton) pour les deux, et on
-    // verifie toujours que la reponse est un vrai tableau avant de l'utiliser.
     appelApi("/api/materiels", { idSite: siteActif })
       .then((resultat) => setMateriels(Array.isArray(resultat) ? resultat : []))
       .catch(() => setErreurServeur("Impossible de charger les materiels"));
@@ -65,30 +65,33 @@ export default function NouvelleAffectationPage() {
       .catch(() => setErreurServeur("Impossible de charger les utilisateurs"));
   }, [siteActif]);
 
+  // Appele quand le formulaire est incomplet
+  function onInvalid() {
+    toast.error("Formulaire incomplet : choisis un materiel, un utilisateur et une date.");
+  }
+
+  // Envoi du formulaire : creation de l'affectation
   async function onSubmit(values: AffectationFormOutput) {
     setErreurServeur(null);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/affectations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      await appelApi("/api/affectations", {
+        methode: "POST",
+        idSite: siteActif,
+        corps: {
           id_materiel: Number(values.idMateriel),
           id_utilisateur: Number(values.idUtilisateur),
           date_debut: values.dateDebut,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        throw new Error("La creation a echoue");
-      }
-
+      // Message de confirmation, visible aussi sur la liste
+      toast.success("Affectation enregistree avec succes");
       router.push("/affectations");
-    } catch {
-      setErreurServeur("Erreur lors de l'enregistrement. Verifie que le serveur tourne bien.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'enregistrement.";
+      setErreurServeur(message);
+      toast.error(message);
     }
   }
 
@@ -107,7 +110,11 @@ export default function NouvelleAffectationPage() {
           <CardTitle>Details de l&apos;affectation</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <form
+            className="grid gap-4"
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            noValidate
+          >
             <div className="space-y-2">
               <Label htmlFor="idMateriel">Materiel</Label>
               <select
@@ -119,7 +126,7 @@ export default function NouvelleAffectationPage() {
                 <option value="" disabled>Choisir un materiel</option>
                 {materiels.map((m) => (
                   <option key={m.id_materiel} value={m.id_materiel}>
-                    {m.code_poste} — {m.marque} {m.modele}
+                    {m.code_poste} - {m.marque} {m.modele}
                   </option>
                 ))}
               </select>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound, Plus, Check, X, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
+import { appelApi } from "@/lib/api";
 
 interface Compte {
   id_compte: number;
@@ -27,14 +29,6 @@ interface Compte {
 interface Site {
   id_site: number;
   libelle_site: string;
-}
-
-function enTeteAuth() {
-  const token = localStorage.getItem("token");
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
 }
 
 export default function ComptesPage() {
@@ -55,12 +49,10 @@ export default function ComptesPage() {
   const [nouveauProfil, setNouveauProfil] = useState("gestionnaire");
   const [nouveauSite, setNouveauSite] = useState("");
 
+  // Chargement de la liste des comptes et des sites
   function chargerDonnees() {
     setChargement(true);
-    Promise.all([
-      fetch("http://localhost:5000/api/comptes", { headers: enTeteAuth() }).then((res) => res.json()),
-      fetch("http://localhost:5000/api/sites").then((res) => res.json()),
-    ])
+    Promise.all([appelApi("/api/comptes"), appelApi("/api/sites")])
       .then(([comptesData, sitesData]) => {
         setComptes(Array.isArray(comptesData) ? comptesData : []);
         setSites(Array.isArray(sitesData) ? sitesData : []);
@@ -73,6 +65,7 @@ export default function ComptesPage() {
     chargerDonnees();
   }, []);
 
+  // Creation d'un nouveau compte
   async function creerCompte() {
     setErreur(null);
     if (!nouvelIdentifiant.trim() || !nouveauMdpCreation) {
@@ -85,18 +78,15 @@ export default function ComptesPage() {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/comptes", {
-        method: "POST",
-        headers: enTeteAuth(),
-        body: JSON.stringify({
+      await appelApi("/api/comptes", {
+        methode: "POST",
+        corps: {
           identifiant: nouvelIdentifiant,
           mot_de_passe: nouveauMdpCreation,
           profil: nouveauProfil,
           id_site: nouveauSite ? Number(nouveauSite) : null,
-        }),
+        },
       });
-      const resultat = await res.json();
-      if (!res.ok) throw new Error(resultat?.erreur || "Erreur lors de la création");
 
       setNouvelIdentifiant("");
       setNouveauMdpCreation("");
@@ -104,8 +94,12 @@ export default function ComptesPage() {
       setNouveauSite("");
       setAfficherFormulaireAjout(false);
       chargerDonnees();
+      // Message de confirmation
+      toast.success("Compte créé avec succès");
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Erreur lors de la création");
+      const message = err instanceof Error ? err.message : "Erreur lors de la création";
+      setErreur(message);
+      toast.error(message);
     }
   }
 
@@ -115,39 +109,44 @@ export default function ComptesPage() {
     setErreur(null);
   }
 
+  // Changement du mot de passe d'un compte
   async function enregistrerNouveauMdp(idCompte: number) {
     if (nouveauMotDePasse.length < 6) {
       setErreur("Le mot de passe doit contenir au moins 6 caractères");
       return;
     }
     try {
-      const res = await fetch(`http://localhost:5000/api/comptes/${idCompte}/mot-de-passe`, {
-        method: "PUT",
-        headers: enTeteAuth(),
-        body: JSON.stringify({ nouveau_mot_de_passe: nouveauMotDePasse }),
+      await appelApi(`/api/comptes/${idCompte}/mot-de-passe`, {
+        methode: "PUT",
+        corps: { nouveau_mot_de_passe: nouveauMotDePasse },
       });
-      const resultat = await res.json();
-      if (!res.ok) throw new Error(resultat?.erreur || "Erreur lors du changement de mot de passe");
 
       setCompteEnEdition(null);
       setNouveauMotDePasse("");
+      setErreur(null);
+      // Message de confirmation
+      toast.success("Mot de passe modifié avec succès");
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Erreur lors du changement de mot de passe");
+      const message =
+        err instanceof Error ? err.message : "Erreur lors du changement de mot de passe";
+      setErreur(message);
+      toast.error(message);
     }
   }
 
+  // Suppression d'un compte
   async function supprimerCompte(idCompte: number) {
     if (!confirm("Supprimer définitivement ce compte ?")) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/comptes/${idCompte}`, {
-        method: "DELETE",
-        headers: enTeteAuth(),
-      });
-      const resultat = await res.json();
-      if (!res.ok) throw new Error(resultat?.erreur || "Erreur lors de la suppression");
+      await appelApi(`/api/comptes/${idCompte}`, { methode: "DELETE" });
+      setErreur(null);
       chargerDonnees();
+      // Message de confirmation
+      toast.success("Compte supprimé avec succès");
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : "Erreur lors de la suppression");
+      const message = err instanceof Error ? err.message : "Erreur lors de la suppression";
+      setErreur(message);
+      toast.error(message);
     }
   }
 
@@ -237,7 +236,7 @@ export default function ComptesPage() {
             <KeyRound className="size-4" />
             Comptes existants
           </CardTitle>
-          <CardDescription>Le mot de passe actuel n&apos;est jamais affiché — tu peux seulement le remplacer.</CardDescription>
+          <CardDescription>Le mot de passe actuel n&apos;est jamais affiché, tu peux seulement le remplacer.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-lg border">

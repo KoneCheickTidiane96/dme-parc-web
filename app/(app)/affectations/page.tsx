@@ -1,168 +1,194 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowLeftRight, Plus, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { EmptyState } from "@/components/empty-state";
 import { useAuth } from "@/lib/auth";
 import { appelApi } from "@/lib/api";
 
-const affectationSchema = z.object({
-  idMateriel: z.string().min(1, "Materiel requis"),
-  idUtilisateur: z.string().min(1, "Utilisateur requis"),
-  dateDebut: z.string().min(1, "Date de debut requise"),
-});
-
-type AffectationFormInput = z.input<typeof affectationSchema>;
-type AffectationFormOutput = z.output<typeof affectationSchema>;
-
-interface MaterielOption {
+// Une affectation en cours (reponse du back-end)
+interface Affectation {
+  id_affecter: number;
+  date_debut: string;
+  date_fin: string | null;
   id_materiel: number;
   code_poste: string;
   marque: string;
   modele: string;
-}
-
-interface UtilisateurOption {
   id_utilisateur: number;
-  nom: string;
-  fonction: string;
+  nom_utilisateur: string;
 }
 
-export default function NouvelleAffectationPage() {
-  const router = useRouter();
+const colonnes = ["Code poste", "Materiel", "Utilisateur", "Date de debut", "Action"];
+
+// Extrait le nombre a la fin du code poste (ex: "PC-DME 12" -> 12) pour trier 1, 2, 3...
+function numeroCodePoste(code: string): number {
+  const resultat = /(\d+)\s*$/.exec(code ?? "");
+  return resultat ? Number(resultat[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+// Affiche une date en format francais (ex: 12/10/2026)
+function formaterDate(valeur: string | null): string {
+  if (!valeur) return "-";
+  const date = new Date(valeur);
+  return Number.isNaN(date.getTime()) ? String(valeur) : date.toLocaleDateString("fr-FR");
+}
+
+export default function AffectationsPage() {
   const { siteActif } = useAuth();
+  const [affectations, setAffectations] = useState<Affectation[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [retraitEnCours, setRetraitEnCours] = useState<number | null>(null);
 
-  const [materiels, setMateriels] = useState<MaterielOption[]>([]);
-  const [utilisateurs, setUtilisateurs] = useState<UtilisateurOption[]>([]);
-  const [erreurServeur, setErreurServeur] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<AffectationFormInput, unknown, AffectationFormOutput>({
-    resolver: zodResolver(affectationSchema),
-  });
-
-  useEffect(() => {
+  // Chargement des affectations en cours du site actif
+  function chargerAffectations() {
     if (!siteActif) return;
 
-    // Les deux listes sont desormais protegees par connexion : on utilise
-    // appelApi (qui joint le jeton automatiquement) pour les deux.
-    appelApi("/api/materiels", { idSite: siteActif })
-      .then((resultat) => setMateriels(Array.isArray(resultat) ? resultat : []))
-      .catch(() => setErreurServeur("Impossible de charger les materiels"));
+    setChargement(true);
+    setErreur(null);
 
-    appelApi("/api/utilisateurs", { idSite: siteActif })
-      .then((resultat) => setUtilisateurs(Array.isArray(resultat) ? resultat : []))
-      .catch(() => setErreurServeur("Impossible de charger les utilisateurs"));
+    appelApi("/api/affectations", { idSite: siteActif })
+      .then((resultat) => setAffectations(Array.isArray(resultat) ? resultat : []))
+      .catch(() => setErreur("Erreur lors du chargement des affectations"))
+      .finally(() => setChargement(false));
+  }
+
+  useEffect(() => {
+    chargerAffectations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteActif]);
 
-  async function onSubmit(values: AffectationFormOutput) {
-    setErreurServeur(null);
+  // Tri par numero de code poste croissant
+  const affectationsTriees = useMemo(
+    () =>
+      [...affectations].sort(
+        (a, b) =>
+          numeroCodePoste(a.code_poste) - numeroCodePoste(b.code_poste) ||
+          (a.code_poste ?? "").localeCompare(b.code_poste ?? "", "fr", { sensitivity: "base" })
+      ),
+    [affectations]
+  );
+
+  // Termine une affectation (le materiel redevient disponible)
+  async function retirerAffectation(a: Affectation) {
+    if (
+      !confirm(
+        `Retirer le matériel ${a.code_poste} à ${a.nom_utilisateur} ? L'affectation sera clôturée.`
+      )
+    )
+      return;
+
+    setRetraitEnCours(a.id_affecter);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/affectations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          id_materiel: Number(values.idMateriel),
-          id_utilisateur: Number(values.idUtilisateur),
-          date_debut: values.dateDebut,
-        }),
+      await appelApi(`/api/affectations/${a.id_affecter}/retirer`, {
+        methode: "PUT",
+        idSite: siteActif,
       });
-
-      if (!res.ok) {
-        throw new Error("La creation a echoue");
-      }
-
-      router.push("/affectations");
-    } catch {
-      setErreurServeur("Erreur lors de l'enregistrement. Verifie que le serveur tourne bien.");
+      chargerAffectations();
+      // Message de confirmation
+      toast.success("Matériel retiré avec succès");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur lors du retrait du matériel";
+      toast.error(message);
+    } finally {
+      setRetraitEnCours(null);
     }
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Nouvelle affectation</h1>
-        <p className="text-muted-foreground">
-          Si le materiel choisi est deja affecte a quelqu&apos;un, son ancienne affectation
-          sera automatiquement cloturee.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Affectations</h1>
+          <p className="text-muted-foreground">
+            Materiel actuellement attribue aux agents de la DME.
+          </p>
+        </div>
+        <Button
+          nativeButton={false}
+          render={<Link href="/affectations/nouveau"><Plus />Nouvelle affectation</Link>}
+        />
       </div>
 
-      <Card className="max-w-xl">
+      <Card>
         <CardHeader>
-          <CardTitle>Details de l&apos;affectation</CardTitle>
+          <CardTitle className="text-base">Affectations en cours</CardTitle>
+          <CardDescription>
+            Un materiel ne peut etre affecte qu&apos;a un seul agent a la fois.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)} noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="idMateriel">Materiel</Label>
-              <select
-                id="idMateriel"
-                className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                {...register("idMateriel")}
-                defaultValue=""
-              >
-                <option value="" disabled>Choisir un materiel</option>
-                {materiels.map((m) => (
-                  <option key={m.id_materiel} value={m.id_materiel}>
-                    {m.code_poste} — {m.marque} {m.modele}
-                  </option>
-                ))}
-              </select>
-              {errors.idMateriel && (
-                <p className="text-sm text-destructive">{errors.idMateriel.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="idUtilisateur">Utilisateur</Label>
-              <select
-                id="idUtilisateur"
-                className="border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
-                {...register("idUtilisateur")}
-                defaultValue=""
-              >
-                <option value="" disabled>Choisir un utilisateur</option>
-                {utilisateurs.map((u) => (
-                  <option key={u.id_utilisateur} value={u.id_utilisateur}>
-                    {u.nom} ({u.fonction})
-                  </option>
-                ))}
-              </select>
-              {errors.idUtilisateur && (
-                <p className="text-sm text-destructive">{errors.idUtilisateur.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="dateDebut">Date de debut</Label>
-              <Input id="dateDebut" type="date" {...register("dateDebut")} />
-              {errors.dateDebut && (
-                <p className="text-sm text-destructive">{errors.dateDebut.message}</p>
-              )}
-            </div>
-
-            {erreurServeur && (
-              <p className="text-sm text-destructive">{erreurServeur}</p>
-            )}
-
-            <Button type="submit" disabled={isSubmitting}>
-              Enregistrer
-            </Button>
-          </form>
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {colonnes.map((colonne) => (
+                    <TableHead key={colonne}>{colonne}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {chargement ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={colonnes.length} className="p-6 text-center text-sm text-muted-foreground">
+                      Chargement...
+                    </TableCell>
+                  </TableRow>
+                ) : erreur ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={colonnes.length} className="p-6 text-center text-sm text-destructive">
+                      {erreur}
+                    </TableCell>
+                  </TableRow>
+                ) : affectationsTriees.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={colonnes.length} className="p-0">
+                      <EmptyState
+                        icon={ArrowLeftRight}
+                        title="Aucune affectation en cours"
+                        description="Cree une affectation pour attribuer un materiel a un agent."
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  affectationsTriees.map((a) => (
+                    <TableRow key={a.id_affecter}>
+                      <TableCell className="font-medium">{a.code_poste}</TableCell>
+                      <TableCell>
+                        {a.marque} {a.modele}
+                      </TableCell>
+                      <TableCell>{a.nom_utilisateur}</TableCell>
+                      <TableCell>{formaterDate(a.date_debut)}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => retirerAffectation(a)}
+                          disabled={retraitEnCours === a.id_affecter}
+                        >
+                          <Undo2 className="size-3.5" />
+                          {retraitEnCours === a.id_affecter ? "Retrait..." : "Retirer"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

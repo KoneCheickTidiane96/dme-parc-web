@@ -24,7 +24,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/lib/auth";
-import { appelApi } from "@/lib/api";
+import { appelApi, API_BASE_URL } from "@/lib/api";
 
 interface Materiel {
   id_materiel: number;
@@ -58,6 +58,11 @@ interface ResumeImport {
   feuille_utilisee?: string;
 }
 
+function numeroCodePoste(codePoste: string): number {
+  const correspondance = codePoste?.match(/(\d+)\s*$/);
+  return correspondance ? parseInt(correspondance[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
 export default function MaterielsPage() {
   const { siteActif } = useAuth();
   const [materiels, setMateriels] = useState<Materiel[]>([]);
@@ -84,7 +89,7 @@ export default function MaterielsPage() {
 
     Promise.all([
       appelApi("/api/materiels", { idSite: siteActif }),
-      fetch("http://localhost:5000/api/statuts").then((res) => res.json()),
+      fetch(`${API_BASE_URL}/api/statuts`).then((res) => res.json()),
     ])
       .then(([materielsData, statutsData]) => {
         setMateriels(Array.isArray(materielsData) ? materielsData : []);
@@ -104,19 +109,21 @@ export default function MaterielsPage() {
   }, [siteActif]);
 
   const materielsFiltres = useMemo(() => {
-    return materiels.filter((m) => {
-      const correspondRecherche =
-        recherche.trim() === "" ||
-        m.code_poste?.toLowerCase().includes(recherche.toLowerCase()) ||
-        m.numero_serie?.toLowerCase().includes(recherche.toLowerCase()) ||
-        m.nom_utilisateur?.toLowerCase().includes(recherche.toLowerCase()) ||
-        m.marque?.toLowerCase().includes(recherche.toLowerCase()) ||
-        m.modele?.toLowerCase().includes(recherche.toLowerCase());
+    return materiels
+      .filter((m) => {
+        const correspondRecherche =
+          recherche.trim() === "" ||
+          m.code_poste?.toLowerCase().includes(recherche.toLowerCase()) ||
+          m.numero_serie?.toLowerCase().includes(recherche.toLowerCase()) ||
+          m.nom_utilisateur?.toLowerCase().includes(recherche.toLowerCase()) ||
+          m.marque?.toLowerCase().includes(recherche.toLowerCase()) ||
+          m.modele?.toLowerCase().includes(recherche.toLowerCase());
 
-      const correspondStatut = statutChoisi === "" || m.libelle_statut === statutChoisi;
+        const correspondStatut = statutChoisi === "" || m.libelle_statut === statutChoisi;
 
-      return correspondRecherche && correspondStatut;
-    });
+        return correspondRecherche && correspondStatut;
+      })
+      .sort((a, b) => numeroCodePoste(a.code_poste) - numeroCodePoste(b.code_poste));
   }, [materiels, recherche, statutChoisi]);
 
   const touteLaSelection = materielsFiltres.length > 0 && materielsFiltres.every((m) => selection.has(m.id_materiel));
@@ -147,7 +154,7 @@ export default function MaterielsPage() {
     try {
       await Promise.all(
         Array.from(selection).map((id) =>
-          fetch(`http://localhost:5000/api/materiels/${id}`, {
+          fetch(`${API_BASE_URL}/api/materiels/${id}`, {
             method: "DELETE",
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           })
@@ -182,7 +189,7 @@ export default function MaterielsPage() {
       donnees.append("fichier", fichier);
 
       const res = await fetch(
-        `http://localhost:5000/api/materiels/import?id_site=${siteActif}`,
+        `${API_BASE_URL}/api/materiels/import?id_site=${siteActif}`,
         {
           method: "POST",
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -308,9 +315,6 @@ export default function MaterielsPage() {
             )}
           </div>
 
-          {/* table-fixed + largeurs precises par colonne : empeche un texte
-              long (ex. un statut personnalise) d'elargir le tableau et de
-              repousser les colonnes suivantes hors de l'ecran */}
           <div className="overflow-x-auto rounded-lg border">
             <Table className="w-full table-fixed">
               <TableHeader>
@@ -329,8 +333,6 @@ export default function MaterielsPage() {
                   <TableHead className="w-24">RAM / DD</TableHead>
                   <TableHead className="w-28">Utilisateur</TableHead>
                   <TableHead className="w-28">Site</TableHead>
-                  {/* Colonne Statut plus etroite, avec texte qui retombe a la
-                      ligne (pas de nowrap) pour les libelles longs */}
                   <TableHead className="w-32">Statut</TableHead>
                   <TableHead className="w-24">Date d&apos;achat</TableHead>
                   <TableHead className="w-14">Age</TableHead>
@@ -379,8 +381,6 @@ export default function MaterielsPage() {
                       </TableCell>
                       <TableCell className="truncate">{m.nom_utilisateur ?? "—"}</TableCell>
                       <TableCell className="truncate">{m.libelle_site ?? "—"}</TableCell>
-                      {/* pas de truncate ici : le texte retombe a la ligne au
-                          lieu d'etre coupe ou d'elargir la colonne */}
                       <TableCell className="text-xs break-words">{m.libelle_statut}</TableCell>
                       <TableCell className="truncate text-xs">{formatDate(m.date_achat)}</TableCell>
                       <TableCell>{m.age_calcule ?? "—"}</TableCell>

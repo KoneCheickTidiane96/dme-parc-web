@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
+import { API_BASE_URL, appelApi } from "@/lib/api";
 
+// Regles de validation du formulaire
 const materielSchema = z.object({
   codePoste: z.string().min(1, "Code poste requis"),
   ciEntite: z.string().min(1, "Entite requise"),
@@ -40,9 +43,6 @@ interface TypeMateriel {
 
 export default function NouveauMaterielPage() {
   const router = useRouter();
-  // Le site actif (badge en haut) sert directement a determiner ou le
-  // materiel sera cree — pas besoin de le redemander dans le formulaire,
-  // puisqu'on sait deja sur quel site on se trouve (comme pour les utilisateurs).
   const { siteActif } = useAuth();
   const [statuts, setStatuts] = useState<Statut[]>([]);
   const [types, setTypes] = useState<TypeMateriel[]>([]);
@@ -57,13 +57,14 @@ export default function NouveauMaterielPage() {
     resolver: zodResolver(materielSchema),
   });
 
+  // Chargement des listes de statuts et de types de materiel
   useEffect(() => {
-    fetch("http://localhost:5000/api/statuts")
+    fetch(`${API_BASE_URL}/api/statuts`)
       .then((res) => res.json())
       .then(setStatuts)
       .catch(() => setErreurServeur("Impossible de charger les statuts"));
 
-    fetch("http://localhost:5000/api/types-materiel")
+    fetch(`${API_BASE_URL}/api/types-materiel`)
       .then((res) => res.json())
       .then(setTypes)
       .catch(() => setErreurServeur("Impossible de charger les types de matériel"));
@@ -71,28 +72,34 @@ export default function NouveauMaterielPage() {
 
   const idTypeChoisi = watch("idTypeMateriel");
 
+  // Duree de vie du type choisi (appliquee automatiquement)
   const dureeAssociee = useMemo(() => {
     const type = types.find((t) => String(t.id_type_materiel) === idTypeChoisi);
     return type?.duree_vie_standard_annees ?? null;
   }, [idTypeChoisi, types]);
 
+  // Appele quand le formulaire est incomplet
+  function onInvalid() {
+    toast.error("Formulaire incomplet : verifie les champs en rouge.");
+  }
+
+  // Envoi du formulaire : creation du materiel
   async function onSubmit(values: MaterielFormOutput) {
     setErreurServeur(null);
 
     if (dureeAssociee === null) {
-      setErreurServeur("Ce type de matériel n'a pas de durée de vie définie. Contacte un administrateur.");
+      const message =
+        "Ce type de matériel n'a pas de durée de vie définie. Contacte un administrateur.";
+      setErreurServeur(message);
+      toast.error(message);
       return;
     }
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/materiels", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      await appelApi("/api/materiels", {
+        methode: "POST",
+        idSite: siteActif,
+        corps: {
           code_poste: values.codePoste,
           ci_entite: values.ciEntite,
           marque: values.marque,
@@ -102,20 +109,20 @@ export default function NouveauMaterielPage() {
           id_statut: Number(values.idStatut),
           id_type_materiel: Number(values.idTypeMateriel),
           duree_amortissement: dureeAssociee,
-          // Le site actuellement affiche (badge) est utilise directement
           id_site: siteActif ? Number(siteActif) : undefined,
           ram_mo: values.ramMo ? Number(values.ramMo) : null,
           dd_go: values.ddGo ? Number(values.ddGo) : null,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        throw new Error("La création a échoué");
-      }
-
+      // Message de confirmation, visible aussi sur la page suivante
+      toast.success("Matériel ajouté avec succès");
       router.push("/materiels");
-    } catch {
-      setErreurServeur("Erreur lors de l'enregistrement. Vérifie que le serveur tourne bien.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'enregistrement.";
+      setErreurServeur(message);
+      toast.error(message);
     }
   }
 
@@ -133,7 +140,11 @@ export default function NouveauMaterielPage() {
           <CardTitle>Informations principales</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <form
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            noValidate
+          >
             <div className="space-y-2">
               <Label htmlFor="codePoste">Code poste</Label>
               <Input id="codePoste" {...register("codePoste")} />

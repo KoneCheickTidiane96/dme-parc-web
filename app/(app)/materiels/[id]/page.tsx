@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { appelApi } from "@/lib/api";
+import { appelApi, API_BASE_URL } from "@/lib/api";
 
 const materielSchema = z.object({
   codePoste: z.string().min(1, "Code poste requis"),
@@ -77,12 +77,12 @@ export default function ModifierMaterielPage() {
   });
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/statuts")
+    fetch(`${API_BASE_URL}/api/statuts`)
       .then((res) => res.json())
       .then(setStatuts)
       .catch(() => setErreurServeur("Impossible de charger les statuts"));
 
-    fetch("http://localhost:5000/api/types-materiel")
+    fetch(`${API_BASE_URL}/api/types-materiel`)
       .then((res) => res.json())
       .then(setTypes)
       .catch(() => setErreurServeur("Impossible de charger les types"));
@@ -111,7 +111,7 @@ export default function ModifierMaterielPage() {
     setErreurServeur(null);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:5000/api/materiels/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/api/materiels/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -247,7 +247,6 @@ export default function ModifierMaterielPage() {
               )}
             </div>
 
-            {/* Champ Observation : Input classique (le composant Textarea n'existe pas dans ce projet) */}
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="observation">Observation</Label>
               <Input id="observation" {...register("observation")} />

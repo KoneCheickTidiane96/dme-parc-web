@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
+import { appelApi } from "@/lib/api";
 
+// Regles de validation du formulaire
 const utilisateurSchema = z.object({
   nom: z.string().min(1, "Nom requis"),
   fonction: z.string().min(1, "Fonction requise"),
@@ -23,7 +26,7 @@ type UtilisateurFormOutput = z.output<typeof utilisateurSchema>;
 export default function NouvelUtilisateurPage() {
   const router = useRouter();
   // Le site actif (choisi via le badge en haut de l'ecran) sert directement
-  // a determiner ou l'utilisateur sera cree — pas besoin de le redemander
+  // a determiner ou l'utilisateur sera cree : pas besoin de le redemander
   // dans le formulaire, puisqu'on sait deja sur quel site on se trouve.
   const { siteActif } = useAuth();
   const [erreurServeur, setErreurServeur] = useState<string | null>(null);
@@ -36,33 +39,36 @@ export default function NouvelUtilisateurPage() {
     resolver: zodResolver(utilisateurSchema),
   });
 
+  // Appele quand le formulaire est incomplet
+  function onInvalid() {
+    toast.error("Formulaire incomplet : verifie les champs en rouge.");
+  }
+
+  // Envoi du formulaire : creation de l'utilisateur
   async function onSubmit(values: UtilisateurFormOutput) {
     setErreurServeur(null);
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/utilisateurs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      await appelApi("/api/utilisateurs", {
+        methode: "POST",
+        idSite: siteActif,
+        corps: {
           nom: values.nom,
           fonction: values.fonction,
           matricule: values.matricule,
           // Le site actuellement affiche (badge) est utilise directement
           id_site: siteActif ? Number(siteActif) : undefined,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        throw new Error("La creation a echoue");
-      }
-
+      // Message de confirmation, visible aussi sur la page suivante
+      toast.success("Utilisateur ajouté avec succès");
       router.push("/admin/utilisateurs");
-    } catch {
-      setErreurServeur("Erreur lors de l'enregistrement. Verifie que le serveur tourne bien.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors de l'enregistrement.";
+      setErreurServeur(message);
+      toast.error(message);
     }
   }
 
@@ -80,7 +86,11 @@ export default function NouvelUtilisateurPage() {
           <CardTitle>Informations de l&apos;utilisateur</CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <form
+            className="grid gap-4"
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            noValidate
+          >
             <div className="space-y-2">
               <Label htmlFor="nom">Nom</Label>
               <Input id="nom" {...register("nom")} />

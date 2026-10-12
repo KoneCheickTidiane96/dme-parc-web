@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Users, Plus, UserMinus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -52,7 +53,18 @@ export default function UtilisateursPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteActif]);
 
-  const touteLaSelection = utilisateurs.length > 0 && utilisateurs.every((u) => selection.has(u.id_utilisateur));
+  // Tri alphabetique par nom (A a Z)
+  const utilisateursTries = useMemo(
+    () =>
+      [...utilisateurs].sort((a, b) =>
+        a.nom.localeCompare(b.nom, "fr", { sensitivity: "base" })
+      ),
+    [utilisateurs]
+  );
+
+  const touteLaSelection =
+    utilisateursTries.length > 0 &&
+    utilisateursTries.every((u) => selection.has(u.id_utilisateur));
 
   function basculerLigne(id: number) {
     setSelection((precedent) => {
@@ -64,36 +76,43 @@ export default function UtilisateursPage() {
   }
 
   function basculerTout() {
-    setSelection((precedent) => {
+    setSelection(() => {
       if (touteLaSelection) return new Set();
-      return new Set(utilisateurs.map((u) => u.id_utilisateur));
+      return new Set(utilisateursTries.map((u) => u.id_utilisateur));
     });
   }
 
   // Retire (date_retrait + liberation du materiel) tous les utilisateurs coches
   async function retirerSelection() {
     if (selection.size === 0) return;
-    if (!confirm(`Retirer ${selection.size} utilisateur(s) sélectionné(s) ? Leur matériel sera libéré.`)) return;
+    if (
+      !confirm(
+        `Retirer ${selection.size} utilisateur(s) sélectionné(s) ? Leur matériel sera libéré.`
+      )
+    )
+      return;
 
     setRetraitEnCours(true);
-    const token = localStorage.getItem("token");
+    const nombre = selection.size;
 
     try {
       await Promise.all(
         Array.from(selection).map((id) =>
-          fetch(`http://localhost:5000/api/utilisateurs/${id}/retirer`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
+          appelApi(`/api/utilisateurs/${id}/retirer`, {
+            methode: "PUT",
+            idSite: siteActif,
           })
         )
       );
       setSelection(new Set());
       chargerUtilisateurs();
-    } catch {
-      setErreur("Erreur lors du retrait de la sélection");
+      // Message de confirmation
+      toast.success(`${nombre} utilisateur(s) retiré(s) avec succès`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Erreur lors du retrait de la sélection";
+      setErreur(message);
+      toast.error(message);
     } finally {
       setRetraitEnCours(false);
     }
@@ -115,7 +134,10 @@ export default function UtilisateursPage() {
               {retraitEnCours ? "Retrait..." : `Retirer (${selection.size})`}
             </Button>
           )}
-          <Button render={<Link href="/admin/utilisateurs/nouveau"><Plus />Nouvel utilisateur</Link>} />
+          <Button
+            nativeButton={false}
+            render={<Link href="/admin/utilisateurs/nouveau"><Plus />Nouvel utilisateur</Link>}
+          />
         </div>
       </div>
 
@@ -158,7 +180,7 @@ export default function UtilisateursPage() {
                       {erreur}
                     </TableCell>
                   </TableRow>
-                ) : utilisateurs.length === 0 ? (
+                ) : utilisateursTries.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={colonnes.length} className="p-0">
                       <EmptyState
@@ -169,7 +191,7 @@ export default function UtilisateursPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  utilisateurs.map((u) => (
+                  utilisateursTries.map((u) => (
                     <TableRow key={u.id_utilisateur}>
                       <TableCell>
                         <input
